@@ -354,7 +354,7 @@ class MainActivity : Activity() {
         c.requestMethod = method
         c.setRequestProperty("Authorization", "Bearer " + prefs.getString("ghtoken", ""))
         c.setRequestProperty("Accept", "application/vnd.github+json")
-        if (body != null) { c.doOutput = true; c.setRequestProperty("Content-T        if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
+                if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
         val code = c.responseCode
         val txt = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
         return code to txt
