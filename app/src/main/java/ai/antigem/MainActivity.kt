@@ -67,8 +67,6 @@ class MainActivity : Activity() {
     private var proc: Process? = null
     private lateinit var content: FrameLayout
     private lateinit var nav: LinearLayout
-    private lateinit var permStatus: TextView
-    private lateinit var contBtn: Button
     private lateinit var chatV: View
     private lateinit var editorV: View
     private lateinit var termV: View
@@ -102,43 +100,77 @@ class MainActivity : Activity() {
         listOf("💬" to chatV, "<>" to editorV, ">_" to termV, "🌐" to browserV).forEach { (n, v) ->
             nav.addView(TextView(this).apply { text = n; textSize = 22f; gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(12)); setTextColor(ORANGE); setOnClickListener { show(v) } }, lp(0, -2, 1f))
         }
-        showPermissions()
+        if (prefs.getBoolean("setupDone", false) && hasNotif()) show(chatV) else showPermissions()
     }
 
     private fun show(v: View) { content.removeAllViews(); content.addView(v); nav.visibility = if (v === chatV) View.GONE else View.VISIBLE }
 
     // ===== 1. परमिशन =====
-    private fun card(title: String, tag: String, desc: String, p: String?): View {
-        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(12)); setBackgroundColor(Color.WHITE) }
-        l.addView(TextView(this).apply { text = "$title  [$tag]"; textSize = 18f; setTypeface(null, Typeface.BOLD) })
-        l.addView(TextView(this).apply { text = desc })
-        l.addView(btn("Grant Access") { if (p != null && Build.VERSION.SDK_INT >= 23) requestPermissions(arrayOf(p), 1) })
-        val w = LinearLayout(this).apply { setPadding(0, dp(8), 0, dp(8)) }
-        w.addView(l, lp(-1, -2)); return w
+    private fun permCard(emoji: String, iconBg: Int, title: String, tag: String, tagFg: Int, tagBg: Int, desc: String, p: String, ok: Boolean): View {
+        val green = Color.parseColor("#16A34A"); val lightGreen = Color.parseColor("#DCFCE7")
+        val card = LinearLayout(this).apply {
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = round(if (ok) Color.parseColor("#F3FBF6") else Color.WHITE, 20, if (ok) Color.parseColor("#A7E3BC") else Color.parseColor("#E5E7EB"))
+        }
+        card.addView(TextView(this).apply {
+            text = if (ok) "✔" else emoji; textSize = 22f; gravity = Gravity.CENTER
+            setTextColor(if (ok) green else Color.BLACK); background = round(if (ok) lightGreen else iconBg, 12)
+        }, lp(dp(48), dp(48)))
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), 0, 0, 0) }
+        val head = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        head.addView(TextView(this).apply { text = title; textSize = 18f; setTextColor(Color.BLACK); setTypeface(null, Typeface.BOLD) }, lp(0, -2, 1f))
+        head.addView(TextView(this).apply {
+            text = if (ok) "Enabled ✓" else tag; textSize = 13f; setTextColor(if (ok) green else tagFg)
+            background = round(if (ok) lightGreen else tagBg, 8); setPadding(dp(10), dp(4), dp(10), dp(4))
+        })
+        col.addView(head)
+        col.addView(TextView(this).apply { text = desc; textSize = 15f; setTextColor(Color.GRAY); setPadding(0, dp(6), 0, dp(10)) })
+        if (ok) col.addView(TextView(this).apply { text = "✓ Permission active"; textSize = 15f; setTextColor(green) })
+        else col.addView(TextView(this).apply {
+            text = "Grant Access"; textSize = 16f; setTextColor(Color.BLACK); background = round(Color.parseColor("#E5E7EB"), 12)
+            setPadding(dp(24), dp(12), dp(24), dp(12))
+            setOnClickListener { if (Build.VERSION.SDK_INT >= 23) requestPermissions(arrayOf(p), 1) }
+        }, LinearLayout.LayoutParams(-2, -2))
+        card.addView(col, lp(0, -2, 1f))
+        return card
     }
 
     private fun showPermissions() {
         nav.visibility = View.GONE
-        val sv = ScrollView(this)
-        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(40), dp(20), dp(20)) }
-        l.addView(TextView(this).apply { text = "Welcome to AntiGem"; textSize = 28f; gravity = Gravity.CENTER; setTypeface(null, Typeface.BOLD) })
-        l.addView(TextView(this).apply { text = "Configure your permissions to enable background execution, terminal tools, and local project storage."; gravity = Gravity.CENTER })
-        l.addView(card("Notifications & Services", "Required", "Persistent background service, live status alerts, updates.", Manifest.permission.POST_NOTIFICATIONS))
-        l.addView(card("Storage & /sdcard", "Optional", "Import packages, inspect files, manage code workspaces.", Manifest.permission.READ_EXTERNAL_STORAGE))
-        l.addView(card("Microphone & Voice", "Optional", "Voice-to-text dictation and voice commands in chat.", Manifest.permission.RECORD_AUDIO))
-        permStatus = TextView(this).apply { gravity = Gravity.CENTER }
-        contBtn = btn("") { if (hasNotif()) showEnv() }
-        l.addView(permStatus); l.addView(contBtn)
-        sv.addView(l); content.removeAllViews(); content.addView(sv); refreshPerm()
+        val storageP = Manifest.permission.READ_EXTERNAL_STORAGE; val micP = Manifest.permission.RECORD_AUDIO
+        val storageOk = checkSelfPermission(storageP) == PackageManager.PERMISSION_GRANTED || (Build.VERSION.SDK_INT >= 33 && prefs.getBoolean("asked_$storageP", false))
+        val micOk = checkSelfPermission(micP) == PackageManager.PERMISSION_GRANTED
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(48), dp(24), dp(16)) }
+        l.addView(TextView(this).apply { text = "🛡"; textSize = 36f; gravity = Gravity.CENTER; background = round(Color.parseColor("#F8E9DD"), 40) },
+            LinearLayout.LayoutParams(dp(80), dp(80)).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        l.addView(TextView(this).apply { text = "Welcome to AntiGem"; textSize = 30f; gravity = Gravity.CENTER; setTextColor(Color.BLACK); setTypeface(null, Typeface.BOLD); setPadding(0, dp(24), 0, dp(8)) })
+        l.addView(TextView(this).apply { text = "Configure your permissions to enable background execution, terminal tools, and local project storage."; textSize = 16f; gravity = Gravity.CENTER; setTextColor(Color.GRAY); setPadding(0, 0, 0, dp(20)) })
+        fun gap() = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) }
+        l.addView(permCard("🔔", Color.parseColor("#FBEBD7"), "Notifications & Services", "Required", Color.parseColor("#D97706"), Color.parseColor("#FBEBD7"),
+            "Required for persistent background terminal service, live status alerts, updates, and rootfs package installer progress.", Manifest.permission.POST_NOTIFICATIONS, hasNotif()), gap())
+        l.addView(permCard("📁", Color.parseColor("#E3EEFF"), "Storage & /sdcard", "Optional", Color.parseColor("#2563EB"), Color.parseColor("#E3EEFF"),
+            "Allows AntiGem to access /sdcard to import local bootstrap packages, inspect files, and manage external code workspaces.", storageP, storageOk), gap())
+        l.addView(permCard("🎤", Color.parseColor("#EDE7FD"), "Microphone & Voice", "Optional", Color.parseColor("#7C3AED"), Color.parseColor("#EDE7FD"),
+            "Enables voice-to-text dictation and voice commands directly in chat.", micP, micOk), gap())
+        val ok = hasNotif()
+        val bottom = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(8), dp(24), dp(24)) }
+        if (!ok) bottom.addView(TextView(this).apply { text = "👉 Please enable Notifications above to proceed"; setTextColor(Color.parseColor("#DC2626")); gravity = Gravity.CENTER; textSize = 15f; setPadding(0, 0, 0, dp(12)) })
+        bottom.addView(TextView(this).apply {
+            text = if (ok) "Continue to AntiGem 🚀" else "Notifications Required to Proceed"; textSize = 18f; gravity = Gravity.CENTER
+            setTextColor(if (ok) Color.WHITE else Color.parseColor("#9CA3AF")); setTypeface(null, Typeface.BOLD)
+            background = round(if (ok) ORANGE else Color.parseColor("#E5E7EB"), 24); setPadding(0, dp(18), 0, dp(18))
+            setOnClickListener { if (hasNotif()) showEnv() }
+        })
+        root.addView(ScrollView(this).apply { addView(l) }, lp(-1, 0, 1f)); root.addView(bottom)
+        content.removeAllViews(); content.addView(root)
     }
 
-    private fun refreshPerm() {
-        if (!::contBtn.isInitialized) return
-        if (hasNotif()) { permStatus.text = "✓ Permission active"; permStatus.setTextColor(Color.parseColor("#16A34A")); contBtn.text = "Continue to AntiGem 🚀" }
-        else { permStatus.text = "👉 Please enable Notifications above to proceed"; permStatus.setTextColor(Color.RED); contBtn.text = "Notifications Required to Proceed" }
+    override fun onRequestPermissionsResult(c: Int, p: Array<out String>, r: IntArray) {
+        super.onRequestPermissionsResult(c, p, r)
+        p.forEach { prefs.edit().putBoolean("asked_$it", true).apply() }
+        if (!prefs.getBoolean("setupDone", false)) showPermissions()
     }
-
-    override fun onRequestPermissionsResult(c: Int, p: Array<out String>, r: IntArray) { super.onRequestPermissionsResult(c, p, r); refreshPerm() }
 
     // ===== 2. Environment =====
     private fun showEnv() {
@@ -181,7 +213,7 @@ class MainActivity : Activity() {
         rg.setOnCheckedChangeListener { _, _ -> upd() }; upd()
         l.addView(prev); l.addView(sw); l.addView(rg)
         l.addView(btn("✓ Save & Continue") {
-            prefs.edit().putBoolean("standalone", sw.isChecked).putInt("termIcon", rg.checkedRadioButtonId).apply()
+            prefs.edit().putBoolean("standalone", sw.isChecked).putInt("termIcon", rg.checkedRadioButtonId).putBoolean("setupDone", true).apply()
             nav.visibility = View.VISIBLE; show(chatV)
             showAgent { showUpdate() }
         })
@@ -300,7 +332,7 @@ class MainActivity : Activity() {
 
     // ===== चैट स्क्रीन =====
     private fun round(c: Int, r: Int, stroke: Int = 0): GradientDrawable = GradientDrawable().apply {
-        setColor(c); cornerRadius = dp(r).toFloat(); if (stroke != 0) setStroke(dp(1), stroke)
+                setColor(c); cornerRadius = dp(r).toFloat(); if (stroke != 0) setStroke(dp(1), stroke)
     }
 
     private fun showModel() {
@@ -340,7 +372,7 @@ class MainActivity : Activity() {
         chatScroll = ScrollView(this).apply { addView(msgBox) }
         val ev = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
         ev.addView(TextView(this).apply { text = "✱"; textSize = 36f; gravity = Gravity.CENTER; setTextColor(terra); background = round(Color.parseColor("#F5E4DE"), 40) }, lp(dp(80), dp(80)))
-                emptyTitle = TextView(this).apply { textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.BLACK); setPadding(0, dp(16), 0, dp(8)); setTypeface(null, Typeface.BOLD) }
+        emptyTitle = TextView(this).apply { textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.BLACK); setPadding(0, dp(16), 0, dp(8)); setTypeface(null, Typeface.BOLD) }
         emptySub = TextView(this).apply { textSize = 16f; gravity = Gravity.CENTER; setTextColor(Color.GRAY); setPadding(dp(24), 0, dp(24), dp(16)) }
         ev.addView(emptyTitle); ev.addView(emptySub)
         ev.addView(TextView(this).apply { text = "Set up Claude Code"; textSize = 17f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = round(terra, 24); setPadding(dp(32), dp(14), dp(32), dp(14)); setOnClickListener { showAgent { updTitle() } } })
@@ -548,37 +580,3 @@ class MainActivity : Activity() {
         val out = TextView(this).apply { setTextColor(Color.WHITE); typeface = Typeface.MONOSPACE; setPadding(dp(8), dp(8), dp(8), dp(8)); setTextIsSelectable(true); text = "➜ ~\n" }
         val sv = ScrollView(this).apply { addView(out) }
         val inp = EditText(this).apply {
-            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY); hint = "command..."; typeface = Typeface.MONOSPACE
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        }
-        val row = LinearLayout(this)
-        row.addView(inp, lp(0, -2, 1f))
-        row.addView(btn("Run") {
-            val cmd = inp.text.toString(); if (cmd.isBlank()) return@btn
-            inp.setText(""); out.append("➜ ~ $cmd\n")
-            runShell(cmd, { out.append(it + "\n"); sv.post { sv.fullScroll(View.FOCUS_DOWN) } })
-        })
-        row.addView(btn("⏹") { proc?.destroy() })
-        l.addView(sv, lp(-1, 0, 1f)); l.addView(row)
-        return l
-    }
-
-    // ===== ब्राउज़र =====
-    private fun buildBrowser(): View {
-        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val url = EditText(this).apply { hint = "Search or type URL"; setSingleLine(); inputType = InputType.TYPE_TEXT_VARIATION_URI }
-        val wv = WebView(this).apply { settings.javaScriptEnabled = true; settings.domStorageEnabled = true; webViewClient = WebViewClient() }
-        fun go(t: String) {
-            val x = t.trim()
-            wv.loadUrl(if (x.startsWith("http")) x else if (x.contains(".") && !x.contains(" ")) "https://$x" else "https://www.google.com/search?q=" + java.net.URLEncoder.encode(x, "UTF-8"))
-        }
-        val row = LinearLayout(this)
-        row.addView(url, lp(0, -2, 1f)); row.addView(btn("Go") { go(url.text.toString()) }); row.addView(btn("⟳") { wv.reload() })
-        val sc = LinearLayout(this)
-        sc.addView(btn("Google") { wv.loadUrl("https://www.google.com") }, lp(0, -2, 1f))
-        sc.addView(btn("YouTube") { wv.loadUrl("https://www.youtube.com") }, lp(0, -2, 1f))
-        l.addView(row); l.addView(sc); l.addView(wv, lp(-1, 0, 1f))
-        wv.loadUrl("https://www.google.com")
-        return l
-    }
-}
