@@ -9,10 +9,13 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.util.Base64
 import android.view.Gravity
 import android.view.View
@@ -73,6 +76,11 @@ class MainActivity : Activity() {
     private lateinit var msgBox: LinearLayout
     private lateinit var chatScroll: ScrollView
     private lateinit var chatTitle: TextView
+    private lateinit var wsPill: TextView
+    private lateinit var modelPill: TextView
+    private lateinit var emptyV: View
+    private lateinit var emptyTitle: TextView
+    private lateinit var emptySub: TextView
 
     private fun dp(x: Int) = (x * resources.displayMetrics.density).toInt()
     private fun btn(t: String, c: () -> Unit) = Button(this).apply {
@@ -91,13 +99,13 @@ class MainActivity : Activity() {
         root.addView(content, lp(-1, 0, 1f)); root.addView(nav, lp(-1, -2))
         setContentView(root)
         chatV = buildChat(); editorV = buildEditor(); termV = buildTerminal(); browserV = buildBrowser()
-        listOf("💬 चैट" to chatV, "<> एडिटर" to editorV, ">_ टर्मिनल" to termV, "🌐 ब्राउज़र" to browserV).forEach { (n, v) ->
-            nav.addView(btn(n) { show(v) }, lp(0, -2, 1f))
+        listOf("💬" to chatV, "<>" to editorV, ">_" to termV, "🌐" to browserV).forEach { (n, v) ->
+            nav.addView(TextView(this).apply { text = n; textSize = 22f; gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(12)); setTextColor(ORANGE); setOnClickListener { show(v) } }, lp(0, -2, 1f))
         }
         showPermissions()
     }
 
-    private fun show(v: View) { content.removeAllViews(); content.addView(v) }
+    private fun show(v: View) { content.removeAllViews(); content.addView(v); nav.visibility = if (v === chatV) View.GONE else View.VISIBLE }
 
     // ===== 1. परमिशन =====
     private fun card(title: String, tag: String, desc: String, p: String?): View {
@@ -236,10 +244,10 @@ class MainActivity : Activity() {
 
     private fun showMenu() {
         val all = loadChats(); val items = ArrayList<String>(); val ids = ArrayList<String>()
-        items.add("＋ New Chat"); ids.add("")
+        items.add("＋ New Chat"); ids.add(""); items.add("🔨 Build APK"); ids.add("")
         for (i in all.length() - 1 downTo 0) { val o = all.getJSONObject(i); items.add(o.getString("title")); ids.add(o.getString("id")) }
         AlertDialog.Builder(this).setTitle("Chats")
-            .setItems(items.toTypedArray()) { _, w -> if (w == 0) newChat() else openChat(ids[w]) }
+            .setItems(items.toTypedArray()) { _, w -> if (w == 0) newChat() else if (w == 1) buildFlow() else openChat(ids[w]) }
             .setNeutralButton("📁 Workspace") { _, _ -> showWorkspace() }
             .setPositiveButton("⚙ Settings") { _, _ -> showSettings() }.show()
     }
@@ -260,7 +268,7 @@ class MainActivity : Activity() {
         prefs.edit().putString("chats", out.toString()).apply()
     }
 
-    private fun newChat() { saveChat(); history = JSONArray(); chatId = System.currentTimeMillis().toString(); msgBox.removeAllViews(); updTitle() }
+    private fun newChat() { saveChat(); history = JSONArray(); chatId = System.currentTimeMillis().toString(); msgBox.removeAllViews(); emptyV.visibility = View.VISIBLE; updTitle() }
 
     private fun openChat(id: String) {
         saveChat(); val all = loadChats()
@@ -277,27 +285,97 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun updTitle() { chatTitle.text = "New Chat · " + (if (workspace.isEmpty()) "General" else workspace) }
+    private fun updTitle() {
+        wsPill.text = "📁 " + (if (workspace.isEmpty()) "Select Project" else workspace) + " ▾"
+        val a = prefs.getInt("agent", 0)
+        emptyTitle.text = if (a == 0) "Groq ready" else "Claude Code not found"
+        emptySub.text = if (a == 0) "Settings में Groq key डालिए और नीचे से चैट शुरू कीजिए.\n\n(\$ cmd = टर्मिनल, /build = बिल्ड)" else "The claude CLI is not installed on this device yet. You can install it from Settings in one tap."
+    }
 
     private fun addMsg(t: String) {
+        emptyV.visibility = View.GONE
         msgBox.addView(TextView(this).apply { text = t; textSize = 15f; setTextIsSelectable(true); setPadding(dp(4), dp(6), dp(4), dp(6)) })
         chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
     // ===== चैट स्क्रीन =====
+    private fun round(c: Int, r: Int, stroke: Int = 0): GradientDrawable = GradientDrawable().apply {
+        setColor(c); cornerRadius = dp(r).toFloat(); if (stroke != 0) setStroke(dp(1), stroke)
+    }
+
+    private fun showModel() {
+        val ids = arrayOf("openai/gpt-oss-20b", "openai/gpt-oss-120b", "llama-3.1-8b-instant", "Custom...")
+        AlertDialog.Builder(this).setTitle("Model").setItems(ids) { _, w ->
+            if (w < 3) { prefs.edit().putString("model", ids[w]).apply(); modelPill.text = "✨ " + ids[w] + " ▾" }
+            else {
+                val e = EditText(this)
+                AlertDialog.Builder(this).setTitle("Model id").setView(e).setPositiveButton("OK") { _, _ ->
+                    val m = e.text.toString().trim()
+                    if (m.isNotEmpty()) { prefs.edit().putString("model", m).apply(); modelPill.text = "✨ $m ▾" }
+                }.show()
+            }
+        }.show()
+    }
+
+    private fun showActions() {
+        val a = arrayOf("🔨 Build APK", "⚙ Settings", "🤖 Choose agent")
+        AlertDialog.Builder(this).setItems(a) { _, w -> when (w) { 0 -> buildFlow(); 1 -> showSettings(); else -> showAgent { updTitle() } } }.show()
+    }
+
     private fun buildChat(): View {
-        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)) }
+        val grey = Color.parseColor("#F4F4F6"); val line = Color.parseColor("#DDDDDD"); val terra = Color.parseColor("#DA7756")
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(12)) }
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        chatTitle = TextView(this).apply { textSize = 17f; setTypeface(null, Typeface.BOLD) }
-        top.addView(btn("☰") { showMenu() }); top.addView(chatTitle, lp(0, -2, 1f))
-        top.addView(btn("🔨 Build") { buildFlow() }); top.addView(btn("⚙") { showSettings() })
+        val menu = TextView(this).apply { text = "☰"; textSize = 26f; setTextColor(Color.BLACK); setPadding(0, 0, dp(16), 0); setOnClickListener { showMenu() } }
+        val mid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        chatTitle = TextView(this).apply { text = "New Chat"; textSize = 20f; setTextColor(Color.BLACK); setTypeface(null, Typeface.BOLD) }
+        wsPill = TextView(this).apply { textSize = 14f; setTextColor(Color.parseColor("#444444")); background = round(Color.parseColor("#ECECEF"), 8); setPadding(dp(10), dp(4), dp(10), dp(4)); setOnClickListener { showWorkspace() } }
+        mid.addView(chatTitle); mid.addView(wsPill)
+        val dot = View(this).apply { background = round(Color.parseColor("#F97316"), 8); setOnClickListener { showSettings() } }
+        fun icon(t: String, c: Int, f: () -> Unit) = TextView(this).apply { text = t; textSize = 22f; setTextColor(c); setPadding(dp(10), dp(4), dp(10), dp(4)); setOnClickListener { f() } }
+        top.addView(menu); top.addView(mid, lp(0, -2, 1f)); top.addView(dot, lp(dp(16), dp(16)))
+        top.addView(icon("🌐", Color.BLACK) { show(browserV) }); top.addView(icon(">_", ORANGE) { show(termV) }); top.addView(icon("<>", ORANGE) { show(editorV) })
+
         msgBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         chatScroll = ScrollView(this).apply { addView(msgBox) }
-        val inp = EditText(this).apply { hint = "Reply to Models...   ($ cmd = टर्मिनल, /build = बिल्ड)" }
-        val row = LinearLayout(this)
-        row.addView(inp, lp(0, -2, 1f))
-        row.addView(btn("Send") { val q = inp.text.toString().trim(); if (q.isNotEmpty()) { inp.setText(""); sendMsg(q) } })
-        l.addView(top); l.addView(chatScroll, lp(-1, 0, 1f)); l.addView(row)
+        val ev = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+        ev.addView(TextView(this).apply { text = "✱"; textSize = 36f; gravity = Gravity.CENTER; setTextColor(terra); background = round(Color.parseColor("#F5E4DE"), 40) }, lp(dp(80), dp(80)))
+                emptyTitle = TextView(this).apply { textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.BLACK); setPadding(0, dp(16), 0, dp(8)); setTypeface(null, Typeface.BOLD) }
+        emptySub = TextView(this).apply { textSize = 16f; gravity = Gravity.CENTER; setTextColor(Color.GRAY); setPadding(dp(24), 0, dp(24), dp(16)) }
+        ev.addView(emptyTitle); ev.addView(emptySub)
+        ev.addView(TextView(this).apply { text = "Set up Claude Code"; textSize = 17f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; background = round(terra, 24); setPadding(dp(32), dp(14), dp(32), dp(14)); setOnClickListener { showAgent { updTitle() } } })
+        ev.addView(TextView(this).apply { text = "Check again"; textSize = 16f; setTextColor(Color.DKGRAY); gravity = Gravity.CENTER; setPadding(0, dp(16), 0, 0); setOnClickListener { updTitle() } })
+        emptyV = ev
+        val body = FrameLayout(this)
+        body.addView(chatScroll); body.addView(ev, FrameLayout.LayoutParams(-1, -1))
+
+        val chips = LinearLayout(this).apply { setPadding(0, dp(8), 0, dp(8)) }
+        fun chip(t: String, fg: Int, bg: Int) = TextView(this).apply { text = t; setTextColor(fg); textSize = 15f; background = round(bg, 20, fg); setPadding(dp(16), dp(8), dp(16), dp(8)) }
+        chips.addView(chip("✦ Auto", Color.parseColor("#7C3AED"), Color.parseColor("#F1EAFE")))
+        chips.addView(chip("💡 Thinking", terra, Color.parseColor("#FBE9E3")), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) })
+
+        val card = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = round(Color.WHITE, 24, line); setPadding(dp(16), dp(8), dp(12), dp(12)) }
+        val inp = EditText(this).apply { hint = "Reply to Models..."; background = null; minLines = 2; textSize = 17f }
+        val plus = TextView(this).apply { text = "+"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.BLACK); background = round(grey, 20, line); setOnClickListener { showActions() } }
+        modelPill = TextView(this).apply { textSize = 15f; setTextColor(Color.BLACK); background = round(grey, 20, line); setPadding(dp(14), dp(8), dp(14), dp(8)); setOnClickListener { showModel() } }
+        modelPill.text = "✨ " + prefs.getString("model", "openai/gpt-oss-20b") + " ▾"
+        val send = TextView(this).apply { text = "🎤"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); background = round(Color.BLACK, 28) }
+        send.setOnClickListener {
+            val q = inp.text.toString().trim()
+            if (q.isNotEmpty()) { inp.setText(""); sendMsg(q) } else Toast.makeText(this, "Voice जल्द आएगा", Toast.LENGTH_SHORT).show()
+        }
+        inp.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) { send.text = if (s.isNullOrEmpty()) "🎤" else "➤" }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        val bottom = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        bottom.addView(plus, lp(dp(40), dp(40)))
+        bottom.addView(modelPill, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) })
+        bottom.addView(View(this), lp(0, 1, 1f)); bottom.addView(send, lp(dp(56), dp(56)))
+        card.addView(inp); card.addView(bottom)
+
+        l.addView(top); l.addView(body, lp(-1, 0, 1f)); l.addView(chips); l.addView(card)
         updTitle(); return l
     }
 
@@ -324,7 +402,7 @@ class MainActivity : Activity() {
                 val msgs = JSONArray().put(JSONObject().put("role", "system").put("content",
                     "You are a coding assistant inside an Android app. Reply in the user's language. When you output a file, put it in its own code block whose FIRST line is a comment like '// FILE: app/src/main/...' with the relative path."))
                 for (i in 0 until history.length()) msgs.put(history.getJSONObject(i))
-                val body = JSONObject().put("model", "llama-3.3-70b-versatile").put("messages", msgs)
+                val body = JSONObject().put("model", prefs.getString("model", "openai/gpt-oss-20b")).put("messages", msgs)
                 val c = URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection
                 c.requestMethod = "POST"; c.doOutput = true
                 c.setRequestProperty("Authorization", "Bearer $key"); c.setRequestProperty("Content-Type", "application/json")
@@ -354,7 +432,7 @@ class MainActivity : Activity() {
         c.requestMethod = method
         c.setRequestProperty("Authorization", "Bearer " + prefs.getString("ghtoken", ""))
         c.setRequestProperty("Accept", "application/vnd.github+json")
-                if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
+        if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
         val code = c.responseCode
         val txt = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
         return code to txt
