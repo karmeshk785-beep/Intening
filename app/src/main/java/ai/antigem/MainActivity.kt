@@ -580,3 +580,38 @@ class MainActivity : Activity() {
         val out = TextView(this).apply { setTextColor(Color.WHITE); typeface = Typeface.MONOSPACE; setPadding(dp(8), dp(8), dp(8), dp(8)); setTextIsSelectable(true); text = "➜ ~\n" }
         val sv = ScrollView(this).apply { addView(out) }
         val inp = EditText(this).apply {
+
+                      setTextColor(Color.WHITE); setHintTextColor(Color.GRAY); hint = "command..."; typeface = Typeface.MONOSPACE
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val row = LinearLayout(this)
+        row.addView(inp, lp(0, -2, 1f))
+        row.addView(btn("Run") {
+            val cmd = inp.text.toString(); if (cmd.isBlank()) return@btn
+            inp.setText(""); out.append("➜ ~ $cmd\n")
+            runShell(cmd, { out.append(it + "\n"); sv.post { sv.fullScroll(View.FOCUS_DOWN) } })
+        })
+        row.addView(btn("⏹") { proc?.destroy() })
+        l.addView(sv, lp(-1, 0, 1f)); l.addView(row)
+        return l
+    }
+
+    // ===== ब्राउज़र =====
+    private fun buildBrowser(): View {
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val url = EditText(this).apply { hint = "Search or type URL"; setSingleLine(); inputType = InputType.TYPE_TEXT_VARIATION_URI }
+        val wv = WebView(this).apply { settings.javaScriptEnabled = true; settings.domStorageEnabled = true; webViewClient = WebViewClient() }
+        fun go(t: String) {
+            val x = t.trim()
+            wv.loadUrl(if (x.startsWith("http")) x else if (x.contains(".") && !x.contains(" ")) "https://$x" else "https://www.google.com/search?q=" + java.net.URLEncoder.encode(x, "UTF-8"))
+        }
+        val row = LinearLayout(this)
+        row.addView(url, lp(0, -2, 1f)); row.addView(btn("Go") { go(url.text.toString()) }); row.addView(btn("⟳") { wv.reload() })
+        val sc = LinearLayout(this)
+        sc.addView(btn("Google") { wv.loadUrl("https://www.google.com") }, lp(0, -2, 1f))
+        sc.addView(btn("YouTube") { wv.loadUrl("https://www.youtube.com") }, lp(0, -2, 1f))
+        l.addView(row); l.addView(sc); l.addView(wv, lp(-1, 0, 1f))
+        wv.loadUrl("https://www.google.com")
+        return l
+    }
+}
