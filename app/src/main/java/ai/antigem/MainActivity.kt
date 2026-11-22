@@ -309,6 +309,52 @@ class MainActivity : Activity() {
         thread {
             try {
                 val txt = httpGet("https://api.github.com/repos/termux/termux-app/releases/latest")private fun verifyTermux(log: TextView, cont: View) {
+                                    val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+                val urls = Regex("\"browser_download_url\":\\s*\"([^\"]+\\.apk)\"").findAll(txt).map { it.groupValues[1] }.toList()
+                val url = urls.firstOrNull { it.contains(abi) } ?: urls.firstOrNull { it.contains("universal") } ?: urls.firstOrNull()
+                if (url == null) { runOnUiThread { log.append("❌ APK का लिंक नहीं मिला\n") }; return@thread }
+                runOnUiThread { log.append("Downloading ${url.substringAfterLast('/')}\n") }
+                waitInstall = true
+                downloadAndInstall(url, "termux.apk", { p, s -> runOnUiThread { bar.progress = p; pct.text = "$p%   $s" } }) { ok ->
+                    runOnUiThread { log.append(if (ok) "✓ Download पूरा। Install करके ऐप में वापस आइए।\n" else "❌ Download नहीं हुआ\n") }
+                }
+            } catch (e: Exception) { runOnUiThread { log.append("❌ ${e.message}\n") } }
+        }
+    }
+
+    private fun downloadAndInstall(url: String, name: String, onProgress: (Int, String) -> Unit, done: (Boolean) -> Unit) {
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            runOnUiThread {
+                Toast.makeText(this, "'Install unknown apps' चालू करके वापस आइए और फिर दबाइए", Toast.LENGTH_LONG).show()
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            }
+            done(false); return
+        }
+        File(getExternalFilesDir(null), name).delete()
+        val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        val id = dm.enqueue(DownloadManager.Request(Uri.parse(url)).setTitle(name)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(this, null, name))
+        thread {
+            while (true) {
+                Thread.sleep(1000)
+                val c = dm.query(DownloadManager.Query().setFilterById(id))
+                if (!c.moveToFirst()) { c.close(); done(false); break }
+                val st = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                val got = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                val tot = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)); c.close()
+                if (tot > 0) onProgress((got * 100 / tot).toInt(), "${got / 1048576} / ${tot / 1048576} MB")
+                if (st == DownloadManager.STATUS_SUCCESSFUL) {
+                    runOnUiThread {
+                        startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(dm.getUriForDownloadedFile(id), "application/vnd.android.package-archive")
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                    done(true); break
+                }
+                if (st == DownloadManager.STATUS_FAILED) { done(false); break }
+            }
+        }
+    }
         log.append("Termux जाँच रहा हूँ...\n")
         if (!termuxInstalled()) { log.append("❌ Termux installed नहीं है\n"); return }
         log.append("✓ Termux installed\n")
@@ -616,5 +662,368 @@ class MainActivity : Activity() {
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         top.addView(btn("＋  New Chat") { toggleDrawer(); newChat() }, lp(0, -2, 1f))
         fun sq(t: String, f: () -> Unit) = tv(t, 20f).apply { gravity = Gravity.CENTER; background = round(CHIP, 12, LINE); setOnClickListener { f() } }
-                fun sqLp() = LinearLayout.LayoutParams(dp(44), dp(44)).apply { leftMargin = dp(8) }
+                fun sqLp() = LinearLayout.LayoutParams(dp(44), dp(44)).apply { leftMargin = dp(8) }        val search = EditText(this).apply { hint = "Search chats..."; visibility = View.GONE; setTextColor(FG); setHintTextColor(SUB) }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        fun fill(q: String) {
+            list.removeAllViews(); val all = loadChats(); var n = 0
+            for (i in all.length() - 1 downTo 0) {
+                val o = all.getJSONObject(i); val t = o.getString("title")
+                if (q.isNotEmpty() && !t.contains(q, true)) continue
+                n++
+                list.addView(tv(t, 16f).apply {
+                    setPadding(dp(8), dp(14), dp(8), dp(14))
+                    setOnClickListener { toggleDrawer(); openChat(o.getString("id")) }
+                    setOnLongClickListener { deleteChat(o.getString("id")); fill(q); true }
+                })
+            }
+            if (n == 0) list.addView(tv("No recent chats", 16f, SUB).apply { gravity = Gravity.CENTER; setPadding(0, dp(40), 0, 0) })
+        }
+        top.addView(sq("⏻") { finishAffinity() }, sqLp())
+        top.addView(sq("📁") { toggleDrawer(); showWorkspace() }, sqLp())
+        top.addView(sq("🔍") { search.visibility = if (search.visibility == View.GONE) View.VISIBLE else View.GONE }, sqLp())
+        search.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) { fill(s.toString()) }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        panel.addView(top); panel.addView(search); panel.addView(ScrollView(this).apply { addView(list) }, lp(-1, 0, 1f))
+        fill("")
+        scrim.addView(panel, FrameLayout.LayoutParams((resources.displayMetrics.widthPixels * 0.82).toInt(), -1))
+        root.addView(scrim, FrameLayout.LayoutParams(-1, -1)); drawer = scrim
+    }
+
+    // ===== Select Workspace =====
+    private fun showWorkspace() {
+        val v = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(20), dp(20), dp(16)) }
+        val dlg = AlertDialog.Builder(this).setView(v).create()
+        dlg.window?.setBackgroundDrawable(round(CARD, 24))
+        val projects = File(filesDir, "projects").listFiles()?.filter { it.isDirectory }?.sortedBy { it.name } ?: emptyList()
+        val head = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val ht = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        ht.addView(tv("Select Workspace", 20f, FG, true)); ht.addView(tv("${projects.size + 1} available workspace", 14f, SUB))
+        head.addView(ht, lp(0, -2, 1f))
+        head.addView(tv("✕", 22f).apply { setPadding(dp(12), 0, dp(4), 0); setOnClickListener { dlg.dismiss() } })
+        v.addView(head)
+        fun row(title: String, sub: String, active: Boolean, pick: () -> Unit) {
+            val c = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = round(CHIP, 16, if (active) ORANGE else LINE); setPadding(dp(16), dp(14), dp(16), dp(14)); setOnClickListener { pick(); updTitle(); dlg.dismiss() } }
+            c.addView(tv(title + if (active) "   ✓ Active" else "", 17f, FG, true)); c.addView(tv(sub, 13f, SUB))
+            v.addView(c, gap(12))
+        }
+        row("General (No Workspace)", "Chat without attaching to a directory", workspace.isEmpty()) { workspace = "" }
+        projects.forEach { p -> row(p.name, p.absolutePath, workspace == p.name) { workspace = p.name } }
+        v.addView(outBtn("☁  Use Git Repository...") { dlg.dismiss(); askRepo() }, gap(16))
+        v.addView(btn("＋  Create New Folder...") {
+            dlg.dismiss()
+            val e = EditText(this).apply { hint = "folder name" }
+            AlertDialog.Builder(this).setTitle("New Folder").setView(e).setPositiveButton("Create") { _, _ ->
+                val n = e.text.toString().trim().replace(Regex("[^A-Za-z0-9_-]"), "")
+                if (n.isNotEmpty()) { File(filesDir, "projects/$n").mkdirs(); workspace = n; updTitle() }
+            }.show()
+        }, gap(10))
+        dlg.show()
+    }
+
+    private fun askRepo() {
+        val e = EditText(this).apply { hint = "owner/repo  या  https://github.com/owner/repo" }
+        AlertDialog.Builder(this).setTitle("Use Git Repository").setView(e).setPositiveButton("Clone") { _, _ -> cloneRepo(e.text.toString().trim()) }.show()
+    }
+
+    private fun cloneRepo(input: String) {
+        val m = Regex("([A-Za-z0-9_.-]+)/([A-Za-z0-9_-]+)(?:\\.git)?/?$").find(input)
+        if (m == null) { addMsg("❌ repo का नाम सही नहीं"); return }
+        val owner = m.groupValues[1]; val name = m.groupValues[2]
+        status("⬇ $owner/$name ला रहा है")
+        thread {
+            try {
+                val c = URL("https://api.github.com/repos/$owner/$name/zipball").openConnection() as HttpURLConnection
+                c.setRequestProperty("User-Agent", "AntiGem")
+                val tk = prefs.getString("ghtoken", "") ?: ""
+                if (tk.isNotEmpty()) c.setRequestProperty("Authorization", "Bearer $tk")
+                val dir = File(filesDir, "projects/$name"); dir.mkdirs()
+                ZipInputStream(c.inputStream).use { z ->
+                    var en = z.nextEntry
+                    while (en != null) {
+                        val p = en.name.substringAfter('/')
+                        if (p.isNotEmpty() && !p.contains("..")) {
+                            val f = File(dir, p)
+                            if (en.isDirectory) f.mkdirs() else { f.parentFile?.mkdirs(); f.outputStream().use { o -> z.copyTo(o) } }
+                        }
+                        en = z.nextEntry
+                    }
+                }
+                workspace = name
+                runOnUiThread { updTitle(); addMsg("✅ $owner/$name workspace में आ गया") }; status(null)
+            } catch (e: Exception) { say("❌ ${e.message}"); status(null) }
+        }
+    }
+
+    // ===== Settings =====
+    private fun showGroqDialog() {
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }
+        val k = field("Groq API key (gsk_...)", "groq", true); val m = field("Model", "model", false)
+        if (m.text.isEmpty()) m.setText("openai/gpt-oss-20b")
+        l.addView(k); l.addView(m)
+        AlertDialog.Builder(this).setTitle("Groq").setView(l).setPositiveButton("Save") { _, _ ->
+            prefs.edit().putString("groq", k.text.toString().trim()).putString("model", m.text.toString().trim()).apply()
+            modelPill.text = "✨ " + prefs.getString("model", "") + " ▾"
+        }.show()
+    }
+
+    private fun showGitHubDialog() {
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }
+        val t = field("GitHub token (repo + workflow)", "ghtoken", true); val r = field("Repo (owner/name)", "ghrepo", false)
+        l.addView(t); l.addView(r)
+        AlertDialog.Builder(this).setTitle("GitHub").setView(l).setPositiveButton("Save") { _, _ ->
+            prefs.edit().putString("ghtoken", t.text.toString().trim()).putString("ghrepo", r.text.toString().trim()).apply()
+        }.show()
+    }
+
+    private fun showClaudeDialog() {
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }
+        l.addView(tv("Claude Code के लिए Claude का पेड प्लान या Anthropic API key चाहिए। अभी यह जुड़ा नहीं है। पैसे का इंतज़ाम होने पर key यहाँ सेव कर लीजिए।", 14f, SUB))
+        l.addView(field("Anthropic API key (बाद के लिए)", "claudekey", true).also { claudeField = it })
+        AlertDialog.Builder(this).setTitle("Claude Code").setView(l).setPositiveButton("Save") { _, _ ->
+            prefs.edit().putString("claudekey", claudeField?.text.toString().trim()).apply()
+        }.show()
+    }
+    private var claudeField: EditText? = null
+
+    private fun showSettings() {
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(16), dp(16), dp(24)) }
+        val head = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(12)) }
+        head.addView(tv("←", 26f).apply { setPadding(0, 0, dp(16), 0); setOnClickListener { show(chatV) } })
+        head.addView(tv("Settings & Preferences", 20f, FG, true), lp(0, -2, 1f))
+        head.addView(tv("Done", 17f, ORANGE, true).apply { setOnClickListener { show(chatV) } })
+        l.addView(head)
+        fun row(icon: String, title: String, value: String, f: () -> Unit): View = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(16), dp(16), dp(16)); setOnClickListener { f() }
+            addView(tv(icon, 20f).apply { gravity = Gravity.CENTER; background = round(CHIP, 12) }, lp(dp(40), dp(40)))
+            addView(tv(title, 17f, FG, true).apply { setPadding(dp(14), 0, 0, 0) }, lp(0, -2, 1f))
+            addView(tv("$value  ›", 14f, SUB))
+        }
+        fun group(vararg rows: View) {
+            val g = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = round(CARD, 20, LINE) }
+            rows.forEach { g.addView(it) }
+            l.addView(g, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) })
+        }
+        val dark = prefs.getBoolean("dark", false)
+        group(
+            row("🎨", "Themes", if (dark) "Dark" else "Light") { prefs.edit().putBoolean("dark", !dark).apply(); recreate() },
+            row("✨", "Groq", prefs.getString("model", "openai/gpt-oss-20b") ?: "") { showGroqDialog() },
+            row("🐙", "GitHub", if ((prefs.getString("ghtoken", "") ?: "").isNotEmpty()) "Signed in" else "Signed out") { showGitHubDialog() }
+        )
+        group(
+            row("🚀", "Antigravity", "Not connected") {
+                AlertDialog.Builder(this).setTitle("Antigravity").setMessage("यह अभी जुड़ा नहीं है। इसका असली जुड़ाव Google के अकाउंट और इजाज़त पर टिका है।").setPositiveButton("OK", null).show()
+            },
+            row("✳", "Claude Code", if ((prefs.getString("claudekey", "") ?: "").isNotEmpty()) "Key saved" else "Not connected") { showClaudeDialog() }
+        )
+        group(
+            row(">_", "Terminal & Shell", if (termuxReady()) "Termux ✓" else "Not set up") { showEnv() },
+            row("ℹ", "About", "AntiGem 1.0") {}
+        )
+        show(ScrollView(this).apply { addView(l) })
+    }
+
+    // ===== चैट → GitHub → बिल्ड → APK (अपने आप सुधार के साथ) =====
+    private fun gh(method: String, path: String, body: String? = null): Pair<Int, String> {
+        val c = URL("https://api.github.com$path").openConnection() as HttpURLConnection
+        c.requestMethod = method
+        c.setRequestProperty("Authorization", "Bearer " + prefs.getString("ghtoken", ""))
+        c.setRequestProperty("Accept", "application/vnd.github+json")
+        if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
+        val code = c.responseCode
+        val txt = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
+        return code to txt    }
+
+    private fun latestRun(repo: String): Triple<String, String, String> {
+        val (c, t) = gh("GET", "/repos/$repo/actions/runs?per_page=1")
+        if (c != 200) return Triple("", "", "")
+        fun g(re: String) = Regex(re).find(t)?.groupValues?.get(1) ?: ""
+        return Triple(g("\"id\":\\s*(\\d+)"), g("\"status\":\\s*\"(\\w+)\""), g("\"conclusion\":\\s*\"(\\w+)\""))
+    }
+
+    private fun failLog(runId: String, repo: String): String {
+        return try {
+            val (c, t) = gh("GET", "/repos/$repo/actions/runs/$runId/jobs")
+            if (c != 200) return ""
+            val jobId = Regex("\"id\":\\s*(\\d+)").find(t)?.groupValues?.get(1) ?: return ""
+            val c2 = URL("https://api.github.com/repos/$repo/actions/jobs/$jobId/logs").openConnection() as HttpURLConnection
+            c2.setRequestProperty("Authorization", "Bearer " + prefs.getString("ghtoken", ""))
+            c2.instanceFollowRedirects = true
+            c2.inputStream.bufferedReader().readText().lines().filter { it.contains(" e: ") || it.contains("error:") || it.contains("FAILURE") }.takeLast(40).joinToString("\n")
+        } catch (e: Exception) { "" }
+    }
+
+    private fun pushWorkspace(repo: String, dir: File): Int {
+        var n = 0
+        dir.walkTopDown().filter { it.isFile && it.length() < 900000 }.forEach { f ->
+            val rel = f.relativeTo(dir).path
+            val (c, t) = gh("GET", "/repos/$repo/contents/$rel")
+            val sha = if (c == 200) Regex("\"sha\":\\s*\"([0-9a-f]+)\"").find(t)?.groupValues?.get(1) else null
+            val b = JSONObject().put("message", "AntiGem: $rel").put("branch", "main")
+                .put("content", Base64.encodeToString(f.readBytes(), Base64.NO_WRAP))
+            if (sha != null) b.put("sha", sha)
+            val (pc, pt) = gh("PUT", "/repos/$repo/contents/$rel", b.toString())
+            if (pc >= 300) throw Exception("$rel: $pc ${pt.take(120)}")
+            n++; status("⬆ $rel")
+        }
+        return n
+    }
+
+    private fun buildFlow(attempt: Int) {
+        val repo = prefs.getString("ghrepo", "") ?: ""
+        if ((prefs.getString("ghtoken", "") ?: "").isEmpty() || repo.isEmpty()) {
+            addMsg("⚙ पहले Settings → GitHub में token और repo डालिए।"); return
+        }
+        if (attempt == 0) addMsg("🔨 बिल्ड शुरू: ${wsName()} → $repo")
+        else addMsg("🔁 सुधार की कोशिश $attempt/3")
+        thread {
+            try {
+                val dir = wsDir()
+                val wf = File(dir, ".github/workflows/build.yml")
+                if (!wf.exists()) { wf.parentFile?.mkdirs(); wf.writeText(WORKFLOW.replace("DOLLAR", "$")) }
+                status("⬆ GitHub पर भेज रहा है")
+                val n = pushWorkspace(repo, dir)
+                say("✅ $n फ़ाइलें GitHub पर गईं")
+                val prev = latestRun(repo).first
+                status("🔨 GitHub पर बिल्ड चल रहा है")
+                var shown = ""
+                for (i in 1..150) {
+                    Thread.sleep(8000)
+                    val (id, st, concl) = latestRun(repo)
+                    if (id.isEmpty() || id == prev) continue
+                    if (st != shown) { shown = st; status("🔨 बिल्ड: $st") }
+                    if (st == "completed") {
+                        if (concl == "success") {
+                            status(null)
+                            runOnUiThread { addMsg("✅ बिल्ड पूरा!"); msgBox.addView(btn("⬇ APK डाउनलोड और इंस्टॉल") { installApk(repo) }, gap(8)) }
+                        } else {
+                            val log = failLog(id, repo)
+                            say("❌ बिल्ड फ़ेल ($concl)")
+                            if (attempt < 3 && log.isNotEmpty()) {
+                                status("🛠 एरर ठीक किया जा रहा है")
+                                fixFromLog(log, attempt + 1)
+                            } else { status(null); say("⛔ अपने आप ठीक नहीं हो सका। GitHub → Actions में देखिए।") }
+                        }
+                        return@thread
+                    }
+                }
+                status(null); say("⌛ बिल्ड बहुत देर चला, GitHub Actions में देखिए।")
+            } catch (e: Exception) { status(null); say("❌ ${e.message}") }
+        }
+    }    private fun fixFromLog(log: String, nextAttempt: Int) {
+        val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
+        for (i in 0 until history.length()) msgs.put(history.getJSONObject(i))
+        msgs.put(JSONObject().put("role", "user").put("content",
+            "बिल्ड फ़ेल हुआ। ये एरर है:\n$log\n\nसिर्फ़ जिन फ़ाइलों में गलती है उन्हें पूरा, सही कोड के साथ '// FILE:' वाले ब्लॉक में दोबारा लिखिए।"))
+        val r = groq(msgs)
+        runOnUiThread {
+            if (r.startsWith("Error:")) { say(r); status(null); return@runOnUiThread }
+            history.put(JSONObject().put("role", "user").put("content", "बिल्ड एरर ठीक करो"))
+            history.put(JSONObject().put("role", "assistant").put("content", r))
+            val saved = saveFilesQuiet(r)
+            if (saved.isEmpty()) { say("⛔ सुधार में कोई फ़ाइल नहीं मिली"); status(null); return@runOnUiThread }
+            addMsg("📁 सुधरी फ़ाइलें: " + saved.joinToString(", "))
+            saveChat()
+            buildFlow(nextAttempt)
+        }
+    }
+
+    private fun installApk(repo: String) {
+        downloadAndInstall("https://github.com/$repo/releases/download/latest/app-debug.apk", "app-debug.apk", { p, s -> status("⬇ APK $p%  $s") }) { ok ->
+            status(null)
+            runOnUiThread { addMsg(if (ok) "✅ APK डाउनलोड हो गया, इंस्टॉल खुल रहा है" else "❌ APK डाउनलोड नहीं हुआ") }
+        }
+    }
+
+    // ===== कोड एडिटर =====
+    private fun buildEditor(): View {
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)); setBackgroundColor(BG) }
+        val name = EditText(this).apply { setText("main.txt"); hint = "file name"; setTextColor(FG); setHintTextColor(SUB) }
+        val ed = EditText(this).apply {
+            gravity = Gravity.TOP; typeface = Typeface.MONOSPACE; setTextColor(FG); setHintTextColor(SUB)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val undo = ArrayList<String>()
+        val row = LinearLayout(this)
+        row.addView(outBtn("📂") {
+            val files = wsDir().walkTopDown().filter { it.isFile }.map { it.relativeTo(wsDir()).path }.toList()
+            if (files.isEmpty()) Toast.makeText(this, "कोई फ़ाइल नहीं", Toast.LENGTH_SHORT).show()
+            else AlertDialog.Builder(this).setTitle("Files").setItems(files.toTypedArray()) { _, w -> name.setText(files[w]); ed.setText(File(wsDir(), files[w]).readText()) }.show()
+        }, lp(0, -2, 1f))
+        row.addView(outBtn("Open") { val f = File(wsDir(), name.text.toString()); ed.setText(if (f.exists()) f.readText() else "") }, lp(0, -2, 1f))
+        row.addView(btn("💾 Save") {
+            val f = File(wsDir(), name.text.toString()); f.parentFile?.mkdirs(); undo.add(ed.text.toString()); f.writeText(ed.text.toString())
+            Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
+        }, lp(0, -2, 1f))
+        row.addView(outBtn("↶") { if (undo.isNotEmpty()) ed.setText(undo.removeAt(undo.size - 1)) }, lp(0, -2, 1f))
+        row.addView(outBtn("▶ Run") {
+            val file = name.text.toString().trim()
+            val cmd = when {
+                file.endsWith(".py") -> "python3 '$file'"
+                file.endsWith(".js") -> "node '$file'"
+                file.endsWith(".java") -> "javac '$file' && java '${file.removeSuffix(".java")}'"
+                file.endsWith(".c") -> "clang '$file' -o a.out && ./a.out"
+                file.endsWith(".html") -> null
+                else -> "sh '$file'"
+            }
+            File(wsDir(), file).apply { parentFile?.mkdirs(); writeText(ed.text.toString()) }
+            if (cmd == null) { show(browserV); browserWv.loadUrl("file://" + File(wsDir(), file).absolutePath) }
+            else { show(termV); runCmd(cmd) { termOut.append(it + "\n") } }
+        }, lp(0, -2, 1f))
+        l.addView(name); l.addView(row); l.addView(ed, lp(-1, 0, 1f))
+        return l
+    }
+
+    // ===== टर्मिनल =====
+    private fun buildTerminal(): View {
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
+        termOut = TextView(this).apply {
+            setTextColor(Color.WHITE); typeface = Typeface.MONOSPACE; setPadding(dp(8), dp(8), dp(8), dp(8)); setTextIsSelectable(true)
+            text = if (termuxReady()) "➜ Termux से जुड़ा है\n" else "➜ Termux जुड़ा नहीं है, ऐप का sh चलेगा\n"
+        }
+        val sv = ScrollView(this).apply { addView(termOut) }
+        val inp = EditText(this).apply {
+            setTextColor(Color.WHITE); setHintTextColor(Color.GRAY); hint = "command..."; typeface = Typeface.MONOSPACE
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val row = LinearLayout(this)
+        row.addView(inp, lp(0, -2, 1f))
+        row.addView(btn("Run") {
+            val cmd = inp.text.toString(); if (cmd.isBlank()) return@btn
+            inp.setText(""); termOut.append("➜ ~ $cmd\n")
+            runCmd(cmd) { termOut.append(it + "\n"); sv.post { sv.fullScroll(View.FOCUS_DOWN) } }
+        })
+        row.addView(outBtn("📋") { copy(termOut.text.toString()) })
+        row.addView(outBtn("⏹") { proc?.destroy() })
+        l.addView(sv, lp(-1, 0, 1f)); l.addView(row)
+        return l
+    }
+
+    // ===== ब्राउज़र =====
+    private fun buildBrowser(): View {
+        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BG) }
+        val url = EditText(this).apply { hint = "Search or type URL"; setSingleLine(); setTextColor(FG); setHintTextColor(SUB); inputType = InputType.TYPE_TEXT_VARIATION_URI }
+        browserWv = WebView(this).apply { settings.javaScriptEnabled = true; settings.domStorageEnabled = true; webViewClient = WebViewClient() }
+        fun go(t: String) {
+            val x = t.trim()
+            browserWv.loadUrl(when {
+                x.startsWith("http") || x.startsWith("file://") -> x
+                x.contains(".") && !x.contains(" ") -> "https://$x"
+                else -> "https://www.google.com/search?q=" + java.net.URLEncoder.encode(x, "UTF-8")
+            })
+        }
+        val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        row.addView(url, lp(0, -2, 1f))
+        row.addView(outBtn("Go") { go(url.text.toString()) })
+        row.addView(outBtn("⟳") { browserWv.reload() })
+        val sc = LinearLayout(this).apply { setPadding(0, dp(6), 0, dp(6)) }
+        sc.addView(outBtn("Google") { browserWv.loadUrl("https://www.google.com") }, lp(0, -2, 1f))
+        sc.addView(outBtn("YouTube") { browserWv.loadUrl("https://www.youtube.com") }, lp(0, -2, 1f))
+        l.addView(row); l.addView(sc); l.addView(browserWv, lp(-1, 0, 1f))
+        browserWv.loadUrl("https://www.google.com")
+        return l
+    }
+}
           
