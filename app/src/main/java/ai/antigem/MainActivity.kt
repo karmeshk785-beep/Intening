@@ -307,8 +307,8 @@ class MainActivity : Activity() {
     private fun downloadTermux(bar: ProgressBar, pct: TextView, log: TextView) {
         log.append("Latest Termux release खोज रहा हूँ...\n")
         thread {
-            try {
-                val txt = httpGet("https://api.github.com/repos/termux/termux-app/releases/latest")private fun verifyTermux(log: TextView, cont: View) {
+            try {                val txt = httpGet("https://api.github.com/repos/termux/termux-app/releases/latest")
+                
                                     val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
                 val urls = Regex("\"browser_download_url\":\\s*\"([^\"]+\\.apk)\"").findAll(txt).map { it.groupValues[1] }.toList()
                 val url = urls.firstOrNull { it.contains(abi) } ?: urls.firstOrNull { it.contains("universal") } ?: urls.firstOrNull()
@@ -354,7 +354,7 @@ class MainActivity : Activity() {
                 if (st == DownloadManager.STATUS_FAILED) { done(false); break }
             }
         }
-    }
+        private fun verifyTermux(log: TextView, cont: View) {
         log.append("Termux जाँच रहा हूँ...\n")
         if (!termuxInstalled()) { log.append("❌ Termux installed नहीं है\n"); return }
         log.append("✓ Termux installed\n")
