@@ -654,7 +654,8 @@ class MainActivity : Activity() {
     }
 
     // ===== साइड मेन्यू =====
-    private fun toggleDrawer() {
+    
+        
         val old = drawer
         if (old != null) { root.removeView(old); drawer = null; return }
         val scrim = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#66000000")); setOnClickListener { toggleDrawer() } }
