@@ -894,10 +894,10 @@ class MainActivity : Activity() {
                     Thread.sleep(8000)
                     val (id, st, concl) = latestRun(repo)
                     if (id.isEmpty() || id == prev) continue
-                    if (st != shown) { shown = st; status("�🔨 बिल्ड: $st") }                for (i in 1..150) {
-                    Thread.sleep(8000)
-                    val (id, st, concl) = latestRun(repo)
-                    if (id.isEmpty() || id == prev) continue
+                    
+                    
+                    
+                    
                     if (st != shown) { shown = st; status("🔨 बिल्ड: $st") }
                     if (st == "completed") {
                         if (concl == "success") {
