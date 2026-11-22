@@ -663,7 +663,9 @@ class MainActivity : Activity() {
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         top.addView(btn("＋  New Chat") { toggleDrawer(); newChat() }, lp(0, -2, 1f))
         fun sq(t: String, f: () -> Unit) = tv(t, 20f).apply { gravity = Gravity.CENTER; background = round(CHIP, 12, LINE); setOnClickListener { f() } }
-                fun sqLp() = LinearLayout.LayoutParams(dp(44), dp(44)).apply { leftMargin = dp(8) }        val search = EditText(this).apply { hint = "Search chats..."; visibility = View.GONE; setTextColor(FG); setHintTextColor(SUB) }
+                        fun sqLp() = LinearLayout.LayoutParams(dp(44), dp(44)).apply { leftMargin = dp(8) }
+                                val search = EditText(this).apply { hint = "Search chats..."; visibility = View.GONE; setTextColor(FG); setHintTextColor(SUB) }
+                                
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         fun fill(q: String) {
             list.removeAllViews(); val all = loadChats(); var n = 0
