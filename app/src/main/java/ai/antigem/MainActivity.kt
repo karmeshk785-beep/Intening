@@ -654,7 +654,7 @@ class MainActivity : Activity() {
     }
 
     // ===== साइड मेन्यू =====
-    
+        private fun toggleDrawer() {
         
         val old = drawer
         if (old != null) { root.removeView(old); drawer = null; return }
