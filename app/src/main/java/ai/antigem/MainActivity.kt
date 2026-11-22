@@ -915,7 +915,8 @@ class MainActivity : Activity() {
                 status(null); say("⌛ बिल्ड बहुत देर चला, GitHub Actions में देखिए।")
             } catch (e: Exception) { status(null); say("❌ ${e.message}") }
         }
-    }    private fun fixFromLog(log: String, nextAttempt: Int) {
+    
+    
         val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
         for (i in 0 until history.length()) msgs.put(history.getJSONObject(i))
         msgs.put(JSONObject().put("role", "user").put("content",
