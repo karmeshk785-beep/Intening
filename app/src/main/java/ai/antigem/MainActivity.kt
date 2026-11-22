@@ -296,7 +296,9 @@ class MainActivity : Activity() {
         content.removeAllViews(); content.addView(ScrollView(this).apply { addView(l) })
     }
 
-    
+        private fun termuxInstalled() = try { packageManager.getPackageInfo("com.termux", 0); true } catch (e: Exception) { false }
+            private fun httpGet(u: String): String {
+                
     
         val c = URL(u).openConnection() as HttpURLConnection
         c.setRequestProperty("User-Agent", "AntiGem"); c.setRequestProperty("Accept", "application/vnd.github+json")
