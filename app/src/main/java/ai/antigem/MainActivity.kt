@@ -296,9 +296,7 @@ class MainActivity : Activity() {
         content.removeAllViews(); content.addView(ScrollView(this).apply { addView(l) })
     }
 
-    private fun termuxInstalled() = try { packageManager.getPackageInfo("com.termux", 0); true } catch (e: Exception) { false }
-
-    private fun httpGet(u: String): String {
+    private fun termuxInstalled() = try { packageManager.getPackageInfo("com.termux", 0); true } catch (e: Exception) { false }    private fun httpGet(u: String): String {
         val c = URL(u).openConnection() as HttpURLConnection
         c.setRequestProperty("User-Agent", "AntiGem"); c.setRequestProperty("Accept", "application/vnd.github+json")
         return (if (c.responseCode < 400) c.inputStream else c.errorStream).bufferedReader().readText()
@@ -307,9 +305,9 @@ class MainActivity : Activity() {
     private fun downloadTermux(bar: ProgressBar, pct: TextView, log: TextView) {
         log.append("Latest Termux release खोज रहा हूँ...\n")
         thread {
-            try {                val txt = httpGet("https://api.github.com/repos/termux/termux-app/releases/latest")
-                
-                                    val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+            try {
+                val txt = httpGet("https://api.github.com/repos/termux/termux-app/releases/latest")
+                val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
                 val urls = Regex("\"browser_download_url\":\\s*\"([^\"]+\\.apk)\"").findAll(txt).map { it.groupValues[1] }.toList()
                 val url = urls.firstOrNull { it.contains(abi) } ?: urls.firstOrNull { it.contains("universal") } ?: urls.firstOrNull()
                 if (url == null) { runOnUiThread { log.append("❌ APK का लिंक नहीं मिला\n") }; return@thread }
@@ -354,7 +352,9 @@ class MainActivity : Activity() {
                 if (st == DownloadManager.STATUS_FAILED) { done(false); break }
             }
         }
-        private fun verifyTermux(log: TextView, cont: View) {
+    }
+
+    private fun verifyTermux(log: TextView, cont: View) {
         log.append("Termux जाँच रहा हूँ...\n")
         if (!termuxInstalled()) { log.append("❌ Termux installed नहीं है\n"); return }
         log.append("✓ Termux installed\n")
@@ -595,8 +595,7 @@ class MainActivity : Activity() {
             val q = inp.text.toString().trim()
             if (q.isNotEmpty()) { inp.setText(""); sendMsg(q) } else Toast.makeText(this, "Voice जल्द आएगा", Toast.LENGTH_SHORT).show()
         }
-        inp.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { send.text = if (s.isNullOrEmpty()) "🎤" else "➤" }
+        inp.addTextChangedListener(object : TextWatcher {            override fun afterTextChanged(s: Editable?) { send.text = if (s.isNullOrEmpty()) "🎤" else "➤" }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
@@ -654,8 +653,7 @@ class MainActivity : Activity() {
     }
 
     // ===== साइड मेन्यू =====
-        private fun toggleDrawer() {
-        
+    private fun toggleDrawer() {
         val old = drawer
         if (old != null) { root.removeView(old); drawer = null; return }
         val scrim = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#66000000")); setOnClickListener { toggleDrawer() } }
@@ -663,9 +661,8 @@ class MainActivity : Activity() {
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         top.addView(btn("＋  New Chat") { toggleDrawer(); newChat() }, lp(0, -2, 1f))
         fun sq(t: String, f: () -> Unit) = tv(t, 20f).apply { gravity = Gravity.CENTER; background = round(CHIP, 12, LINE); setOnClickListener { f() } }
-                        fun sqLp() = LinearLayout.LayoutParams(dp(44), dp(44)).apply { leftMargin = dp(8) }
-                                val search = EditText(this).apply { hint = "Search chats..."; visibility = View.GONE; setTextColor(FG); setHintTextColor(SUB) }
-                                
+        fun sqLp() = LinearLayout.LayoutParams(dp(44), dp(44)).apply { leftMargin = dp(8) }
+        val search = EditText(this).apply { hint = "Search chats..."; visibility = View.GONE; setTextColor(FG); setHintTextColor(SUB) }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         fun fill(q: String) {
             list.removeAllViews(); val all = loadChats(); var n = 0
@@ -837,7 +834,8 @@ class MainActivity : Activity() {
         if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
         val code = c.responseCode
         val txt = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
-        return code to txt    }
+        return code to txt
+    }
 
     private fun latestRun(repo: String): Triple<String, String, String> {
         val (c, t) = gh("GET", "/repos/$repo/actions/runs?per_page=1")
@@ -896,6 +894,10 @@ class MainActivity : Activity() {
                     Thread.sleep(8000)
                     val (id, st, concl) = latestRun(repo)
                     if (id.isEmpty() || id == prev) continue
+                    if (st != shown) { shown = st; status("�🔨 बिल्ड: $st") }                for (i in 1..150) {
+                    Thread.sleep(8000)
+                    val (id, st, concl) = latestRun(repo)
+                    if (id.isEmpty() || id == prev) continue
                     if (st != shown) { shown = st; status("🔨 बिल्ड: $st") }
                     if (st == "completed") {
                         if (concl == "success") {
@@ -915,8 +917,9 @@ class MainActivity : Activity() {
                 status(null); say("⌛ बिल्ड बहुत देर चला, GitHub Actions में देखिए।")
             } catch (e: Exception) { status(null); say("❌ ${e.message}") }
         }
-    
-        private fun fixFromLog(log: String, nextAttempt: Int) {
+    }
+
+    private fun fixFromLog(log: String, nextAttempt: Int) {
         val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
         for (i in 0 until history.length()) msgs.put(history.getJSONObject(i))
         msgs.put(JSONObject().put("role", "user").put("content",
@@ -1029,5 +1032,4 @@ class MainActivity : Activity() {
         browserWv.loadUrl("https://www.google.com")
         return l
     }
-}
-          
+    }
