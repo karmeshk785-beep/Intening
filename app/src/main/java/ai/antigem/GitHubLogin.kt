@@ -57,7 +57,7 @@ object GitHubLogin {
                     if (err == "slow_down") interval += 5
                     else if (err != "authorization_pending") return@thread
                 }
-            } catch (e: Exception) { }
+                    } catch (e: Exception) { act.runOnUiThread { android.widget.Toast.makeText(act, "लॉगिन एरर: " + e.toString(), android.widget.Toast.LENGTH_LONG).show() } }
         }
     }
 }
