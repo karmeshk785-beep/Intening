@@ -30,7 +30,7 @@ object GitHubLogin {
             try {
                 val d = post("https://github.com/login/device/code",
                     "client_id=$CLIENT_ID&scope=" + URLEncoder.encode("repo workflow", "UTF-8"))
-                val code = d.getString("user_code")
+                                    val code = d.optString("user_code", "").ifEmpty { throw Exception(d.toString()) }
                 val device = d.getString("device_code")
                 val uri = d.getString("verification_uri")
                 var interval = d.optInt("interval", 5)
