@@ -61,7 +61,7 @@ object GitHubLogin {
                 }
             } catch (e: Exception) {
                 act.runOnUiThread {
-                    Toast.makeText(act, "लॉगिन एरर: " + e.toString(), Toast.LENGTH_LONG).show()
+                                    AlertDialog.Builder(act).setTitle("लॉगिन एरर").setMessage(e.toString()).setPositiveButton("ठीक", null).show()
                 }
             }
         }
