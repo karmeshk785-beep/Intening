@@ -772,14 +772,17 @@ class MainActivity : Activity() {
         }.show()
     }
 
-    private fun showGitHubDialog() {
+        private fun showGitHubDialog() {
         val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }
-        val t = field("GitHub token (repo + workflow)", "ghtoken", true); val r = field("Repo (owner/name)", "ghrepo", false)
-        l.addView(t); l.addView(r)
+        val r = field("Repo (owner/name)", "ghrepo", false)
+        l.addView(outBtn("🔐 GitHub से लॉगिन (अपने आप)") {
+            GitHubLogin.start(this) { Toast.makeText(this, "GitHub लॉगिन हो गया ✅", Toast.LENGTH_LONG).show() }
+        })
+        l.addView(r)
         AlertDialog.Builder(this).setTitle("GitHub").setView(l).setPositiveButton("Save") { _, _ ->
-            prefs.edit().putString("ghtoken", t.text.toString().trim()).putString("ghrepo", r.text.toString().trim()).apply()
+            prefs.edit().putString("ghrepo", r.text.toString().trim()).apply()
         }.show()
-    }
+        }
 
     private fun showClaudeDialog() {
         val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }
