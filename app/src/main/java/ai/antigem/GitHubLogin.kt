@@ -22,8 +22,8 @@ object GitHubLogin {
         c.setRequestProperty("Accept", "application/json")
         c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
         c.outputStream.use { it.write(body.toByteArray()) }
-                return JSONObject(txt).put("_url", url).put("_code", c.responseCode)
-        return JSONObject(txt)
+        val txt = (if (c.responseCode < 400) c.inputStream else c.errorStream).bufferedReader().readText()
+        return JSONObject(txt).put("_url", url).put("_code", c.responseCode)
     }
 
     fun start(act: Activity, onDone: () -> Unit) {
