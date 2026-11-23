@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -12,7 +13,7 @@ import java.net.URLEncoder
 import kotlin.concurrent.thread
 
 object GitHubLogin {
-        private const val CLIENT_ID = "0v23lidz7pq39lAK2n1Y"
+    private const val CLIENT_ID = "0v23lidz7pq39lAK2n1Y"
 
     private fun post(url: String, body: String): JSONObject {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -30,7 +31,8 @@ object GitHubLogin {
             try {
                 val d = post("https://github.com/login/device/code",
                     "client_id=$CLIENT_ID&scope=" + URLEncoder.encode("repo workflow", "UTF-8"))
-                                    val code = d.optString("user_code", "").ifEmpty { throw Exception(d.toString()) }
+                val code = d.optString("user_code", "")
+                if (code.isEmpty()) throw Exception(d.toString())
                 val device = d.getString("device_code")
                 val uri = d.getString("verification_uri")
                 var interval = d.optInt("interval", 5)
@@ -57,7 +59,11 @@ object GitHubLogin {
                     if (err == "slow_down") interval += 5
                     else if (err != "authorization_pending") return@thread
                 }
-                    } catch (e: Exception) { act.runOnUiThread { android.widget.Toast.makeText(act, "लॉगिन एरर: " + e.toString(), android.widget.Toast.LENGTH_LONG).show() } }
+            } catch (e: Exception) {
+                act.runOnUiThread {
+                    Toast.makeText(act, "लॉगिन एरर: " + e.toString(), Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 }
