@@ -13,7 +13,7 @@ import java.net.URLEncoder
 import kotlin.concurrent.thread
 
 object GitHubLogin {
-        private const val CLIENT_ID = "0v23lidz7pq39lAK2n1Y"
+            private const val CLIENT_ID = "Ov23lidz7pq39lAK2n1Y"
 
     private fun post(url: String, body: String): JSONObject {
         val c = URL(url).openConnection() as HttpURLConnection
