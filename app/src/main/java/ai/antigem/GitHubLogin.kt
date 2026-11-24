@@ -13,7 +13,7 @@ import java.net.URLEncoder
 import kotlin.concurrent.thread
 
 object GitHubLogin {
-            private const val CLIENT_ID = "Ov23lidz7pq39lAK2n1Y"
+    private const val CLIENT_ID = "Ov23lidz7pq39lAK2n1Y"
 
     private fun post(url: String, body: String): JSONObject {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -52,16 +52,26 @@ object GitHubLogin {
                     if (r.has("access_token")) {
                         act.getSharedPreferences("antigem", Activity.MODE_PRIVATE)
                             .edit().putString("ghtoken", r.getString("access_token")).apply()
-                        act.runOnUiThread { onDone() }
+                        act.runOnUiThread {
+                            Toast.makeText(act, "GitHub लॉगिन हो गया ✅", Toast.LENGTH_LONG).show()
+                            onDone()
+                        }
                         return@thread
                     }
                     val err = r.optString("error")
                     if (err == "slow_down") interval += 5
-                    else if (err != "authorization_pending") return@thread
+                    else if (err != "authorization_pending") {
+                        act.runOnUiThread {
+                            AlertDialog.Builder(act).setTitle("लॉगिन एरर")
+                                .setMessage(r.toString()).setPositiveButton("ठीक", null).show()
+                        }
+                        return@thread
+                    }
                 }
             } catch (e: Exception) {
                 act.runOnUiThread {
-                                    AlertDialog.Builder(act).setTitle("लॉगिन एरर").setMessage(e.toString()).setPositiveButton("ठीक", null).show()
+                    AlertDialog.Builder(act).setTitle("लॉगिन एरर")
+                        .setMessage(e.toString()).setPositiveButton("ठीक", null).show()
                 }
             }
         }
