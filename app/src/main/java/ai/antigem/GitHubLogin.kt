@@ -15,64 +15,93 @@ import kotlin.concurrent.thread
 object GitHubLogin {
     private const val CLIENT_ID = "Ov23lidz7pq39lAK2n1Y"
 
-    private fun post(url: String, body: String): JSONObject {
+    private fun request(url: String, body: String?, token: String? = null): Pair<Int, String> {
         val c = URL(url).openConnection() as HttpURLConnection
-        c.requestMethod = "POST"
-        c.doOutput = true
+        c.connectTimeout = 15000
+        c.readTimeout = 15000
         c.setRequestProperty("Accept", "application/json")
-        c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-        c.outputStream.use { it.write(body.toByteArray()) }
-        val txt = (if (c.responseCode < 400) c.inputStream else c.errorStream).bufferedReader().readText()
-        return JSONObject(txt).put("_url", url).put("_code", c.responseCode)
+        c.setRequestProperty("User-Agent", "AntiGem")
+        if (token != null) c.setRequestProperty("Authorization", "Bearer $token")
+        if (body != null) {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            c.outputStream.use { it.write(body.toByteArray()) }
+        } else {
+            c.requestMethod = "GET"
+        }
+        val code = c.responseCode
+        val txt = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
+        return code to txt
+    }
+
+    private fun show(act: Activity, title: String, msg: String) {
+        act.runOnUiThread {
+            AlertDialog.Builder(act).setTitle(title).setMessage(msg)
+                .setPositiveButton("ठीक", null).show()
+        }
     }
 
     fun start(act: Activity, onDone: () -> Unit) {
         thread {
             try {
-                val d = post("https://github.com/login/device/code",
-                    "client_id=$CLIENT_ID&scope=" + URLEncoder.encode("repo workflow", "UTF-8"))
+                val (c1, t1) = request(
+                    "https://github.com/login/device/code",
+                    "client_id=$CLIENT_ID&scope=" + URLEncoder.encode("repo workflow", "UTF-8")
+                )
+                val d = JSONObject(t1)
                 val code = d.optString("user_code", "")
-                if (code.isEmpty()) throw Exception(d.toString())
+                if (c1 >= 400 || code.isEmpty()) {
+                    show(act, "लॉगिन एरर", "GitHub ने कोड नहीं दिया:\n$t1")
+                    return@thread
+                }
                 val device = d.getString("device_code")
                 val uri = d.getString("verification_uri")
                 var interval = d.optInt("interval", 5)
+
                 act.runOnUiThread {
                     AlertDialog.Builder(act).setTitle("GitHub लॉगिन")
-                        .setMessage("यह कोड याद रखिए और GitHub पेज पर डालिए:\n\n$code")
+                        .setMessage("यह कोड GitHub पेज पर डालिए:\n\n$code\n\nडालने के बाद ऐप में वापस आइए और 30 सेकंड रुकिए।")
                         .setPositiveButton("GitHub खोलें") { _, _ ->
                             act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
                         }
                         .setNegativeButton("बंद", null).show()
                 }
+
                 val end = System.currentTimeMillis() + 900000L
                 while (System.currentTimeMillis() < end) {
                     Thread.sleep(interval * 1000L)
-                    val r = post("https://github.com/login/oauth/access_token",
-                        "client_id=$CLIENT_ID&device_code=$device&grant_type=urn:ietf:params:oauth:grant-type:device_code")
+                    val (_, t2) = request(
+                        "https://github.com/login/oauth/access_token",
+                        "client_id=$CLIENT_ID&device_code=$device&grant_type=urn:ietf:params:oauth:grant-type:device_code"
+                    )
+                    val r = JSONObject(t2)
                     if (r.has("access_token")) {
+                        val token = r.getString("access_token")
                         act.getSharedPreferences("antigem", Activity.MODE_PRIVATE)
-                            .edit().putString("ghtoken", r.getString("access_token")).apply()
+                            .edit().putString("ghtoken", token).commit()
+
+                        val (c3, t3) = request("https://api.github.com/user", null, token)
+                        val login = if (c3 < 400) JSONObject(t3).optString("login", "") else ""
                         act.runOnUiThread {
-                            Toast.makeText(act, "GitHub लॉगिन हो गया ✅", Toast.LENGTH_LONG).show()
+                            Toast.makeText(act, "GitHub लॉगिन हो गया ✅ ${if (login.isNotEmpty()) "($login)" else ""}", Toast.LENGTH_LONG).show()
                             onDone()
                         }
                         return@thread
                     }
                     val err = r.optString("error")
-                    if (err == "slow_down") interval += 5
-                    else if (err != "authorization_pending") {
-                        act.runOnUiThread {
-                            AlertDialog.Builder(act).setTitle("लॉगिन एरर")
-                                .setMessage(r.toString()).setPositiveButton("ठीक", null).show()
+                    when (err) {
+                        "authorization_pending" -> {}
+                        "slow_down" -> interval += 5
+                        else -> {
+                            show(act, "लॉगिन रुका", "GitHub ने बताया: $t2")
+                            return@thread
                         }
-                        return@thread
                     }
                 }
+                show(act, "लॉगिन समय खत्म", "कोड की समय सीमा खत्म हो गई। फिर से लॉगिन दबाइए।")
             } catch (e: Exception) {
-                act.runOnUiThread {
-                    AlertDialog.Builder(act).setTitle("लॉगिन एरर")
-                        .setMessage(e.toString()).setPositiveButton("ठीक", null).show()
-                }
+                show(act, "लॉगिन एरर", e.toString())
             }
         }
     }
